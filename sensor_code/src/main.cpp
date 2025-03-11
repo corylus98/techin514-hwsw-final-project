@@ -3,7 +3,6 @@
 #include <driver/i2s.h>
 #include "arduinoFFT.h" 
 #include <U8g2lib.h>
-#include <Arduino.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
@@ -52,22 +51,25 @@ U8G2_SSD1306_128X64_NONAME_F_SW_I2C u8g2(U8G2_R0, /* clock=*/ 7, /* data=*/ 6, /
 class MyServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
         deviceConnected = true;
+        Serial.println("✅ BLE Device Connected");
     };
  
     void onDisconnect(BLEServer* pServer) {
         deviceConnected = false;
+        Serial.println("❌ BLE Device Disconnected");
     }
 };
 
 void setup() {
 
-	  pinMode(trigPin, OUTPUT);                 
-	  pinMode(echoPin, INPUT);                                                        
     Serial.begin(115200);
+    pinMode(trigPin, OUTPUT);                 
+    pinMode(echoPin, INPUT);                                                        
     Wire.begin(); 
     u8g2.begin();
+    u8g2.setFlipMode(1);
 
-    // Configure I2S
+    // Configure I2S          
     i2s_config_t i2s_config = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
         .sample_rate = 16000,
@@ -89,110 +91,113 @@ void setup() {
     i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
     i2s_set_pin(I2S_NUM_0, &pin_config);
 
-    // Name server device
-    BLEDevice::init("SWHW_Sensor🌲🌲🌲");
-    pServer = BLEDevice::createServer();
-    pServer->setCallbacks(new MyServerCallbacks());
-    BLEService *pService = pServer->createService(SERVICE_UUID);
-    pCharacteristic = pService->createCharacteristic(
-        CHARACTERISTIC_UUID,
-        BLECharacteristic::PROPERTY_READ |
-        BLECharacteristic::PROPERTY_WRITE |
-        BLECharacteristic::PROPERTY_NOTIFY
-    );
-    pCharacteristic->addDescriptor(new BLE2902());
-    pCharacteristic->setValue("👋 Hello World 👋");
-    pService->start();
-    // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this is working for backward compatibility
-    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-    pAdvertising->addServiceUUID(SERVICE_UUID);
-    pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
-    pAdvertising->setMinPreferred(0x12);
-    BLEDevice::startAdvertising();   
+    // // Name server device
+    // BLEDevice::init("SWHW_Sensor🌲🌲🌲");
+    // pServer = BLEDevice::createServer();
+    // pServer->setCallbacks(new MyServerCallbacks());
+    // BLEService *pService = pServer->createService(SERVICE_UUID);
+    // pCharacteristic = pService->createCharacteristic(
+    //     CHARACTERISTIC_UUID,
+    //     BLECharacteristic::PROPERTY_READ |
+    //     BLECharacteristic::PROPERTY_WRITE |
+    //     BLECharacteristic::PROPERTY_NOTIFY
+    // );
+    // pCharacteristic->addDescriptor(new BLE2902());
+    // pCharacteristic->setValue("👋 Hello World 👋");
+    // pService->start();
+    // // BLEAdvertising *pAdvertising = pServer->getAdvertising();  // this is working for backward compatibility
+    // BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    // pAdvertising->addServiceUUID(SERVICE_UUID);
+    // pAdvertising->setScanResponse(true);
+    // pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
+    // pAdvertising->setMinPreferred(0x12);
+    // BLEDevice::startAdvertising();  
 }
 
 
 void loop() {
-  int16_t sampleBuffer[SAMPLES];  // Array to store raw audio samples
-  size_t bytesRead;
+    int16_t sampleBuffer[SAMPLES];  // Array to store raw audio samples
+    size_t bytesRead;
 
-  // Read I2S audio data
-  i2s_read(I2S_NUM_0, sampleBuffer, sizeof(sampleBuffer), &bytesRead, portMAX_DELAY);
+    // Read I2S audio data
+    i2s_read(I2S_NUM_0, sampleBuffer, sizeof(sampleBuffer), &bytesRead, portMAX_DELAY);
 
-  // Convert the raw 16-bit samples to double values for FFT processing
-  for (int i = 0; i < SAMPLES; i++) {
-    vReal[i] = (double)sampleBuffer[i];  // Assign real part
-    vImag[i] = 0.0;  // Imaginary part is zeroed
-  }
-                                       
-  // Perform FFT
-  FFT.windowing(FFTWindow::Hamming, FFTDirection::Forward);  // Apply Hamming window
-  FFT.compute(FFTDirection::Forward);  // Compute FFT
-  FFT.complexToMagnitude();  // Convert to magnitudes
-              
-  // Get the major peak frequency
-  double peakFreq = FindPeakFrequency(vReal, SAMPLES);
+    // Convert the raw 16-bit samples to double values for FFT processing
+    for (int i = 0; i < SAMPLES; i++) {
+        vReal[i] = (double)sampleBuffer[i];  // Assign real part
+        vImag[i] = 0.0;  // Imaginary part is zeroed
+    }
+                                        
+    // Perform FFT
+    FFT.windowing(FFTWindow::Hamming, FFTDirection::Forward);  // Apply Hamming window
+    FFT.compute(FFTDirection::Forward);  // Compute FFT
+    FFT.complexToMagnitude();  // Convert to magnitudes
+                
+    // Get the major peak frequency
+    double peakFreq = FindPeakFrequency(vReal, SAMPLES);
 
-  Serial.print("Major peak frequency: ");
-  Serial.print(peakFreq);
-  Serial.println(" Hz");
+    Serial.print("Major peak frequency: ");
+    Serial.print(peakFreq);
+    Serial.println(" Hz");
 
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
 
-  duration = pulseIn(echoPin, HIGH);
-  distance = (duration*.0343)/2;
-  Serial.print("Distance: ");
-  Serial.println(distance);
+    duration = pulseIn(echoPin, HIGH);
+    distance = (duration*.0343)/2;
+    Serial.print("Distance: ");
+    Serial.println(distance);
 
-  // Display on LCD
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.setCursor(10, 30);
-  u8g2.print("Peak Freq: ");
-  u8g2.setCursor(10, 50);
-  u8g2.print(peakFreq);
-  u8g2.print(" Hz");
-  u8g2.sendBuffer();      
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_ncenB08_tr);                  
 
-  // delay(1000);
+    // Display Peak Frequency
+    u8g2.setCursor(10, 20);
+    if (peakFreq == 62.5) {
+      u8g2.print("Typing...");
+    }
+    // u8g2.print("Freq: ");
+    // u8g2.print(peakFreq);
+    // u8g2.print(" Hz");
 
-  // Display on LCD
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.setCursor(10, 30);
-  u8g2.print("Distance: ");
-  u8g2.setCursor(10, 50);
-  u8g2.print(distance);
-  u8g2.print(" cm");
-  u8g2.sendBuffer();
+    // Display Distance
+    u8g2.setCursor(10, 40);
+    if (distance < 100) {
+      u8g2.print("At screen");
+    } else {
+      u8g2.print("Off screen");
+    }
+    // u8g2.print("Dist: ");
+    // u8g2.print(distance);
+    // u8g2.print(" cm");
 
-  unsigned long currentMillis = millis();
+    u8g2.sendBuffer();
+
+    unsigned long currentMillis = millis();
   // previousMillis = currentMillis;
 
-  if (deviceConnected) {
-    // Send new readings to database
-    if (peakFreq == TARGET_FREQUENCY) {
-      pCharacteristic->setValue("FREQ_MATCH");
-      pCharacteristic->notify();
-      Serial.println("🎙️ Send Frequency 🎙️");
-    }   
-    if (distance < DISTANCE_THRESHOLD) {
-      if (!trackingProximity) {
-          trackingProximity = true;
-          lastTimeBelowThreshold = currentMillis;
-      } else if (currentMillis - lastTimeBelowThreshold >= TIME_THRESHOLD) {
-          pCharacteristic->setValue("PROXIMITY_ALERT");
-          pCharacteristic->notify();
-          trackingProximity = false;
-          Serial.println("🎯 Send Proximity 🎯");
-      }
-    } else {
-      trackingProximity = false;
+    if (deviceConnected) {
+        // Send new readings to database
+        if (peakFreq == TARGET_FREQUENCY) {
+        pCharacteristic->setValue("FREQ_MATCH");
+        pCharacteristic->notify();
+        Serial.println("🎙️ Send Frequency 🎙️");
+        }   
+        if (distance < DISTANCE_THRESHOLD) {
+        if (!trackingProximity) {
+            trackingProximity = true;
+            lastTimeBelowThreshold = currentMillis;
+        } else if (currentMillis - lastTimeBelowThreshold >= TIME_THRESHOLD) {
+            pCharacteristic->setValue("PROXIMITY_ALERT");
+            pCharacteristic->notify();
+            trackingProximity = false;
+            Serial.println("🎯 Send Proximity 🎯");
+        }
+        } else {
+        trackingProximity = false;
 
       // char buffer[32];
       // snprintf(buffer, sizeof(buffer), "Distance: %.2f cm", distance);
@@ -234,5 +239,4 @@ double FindPeakFrequency(double* fftData, int numSamples) {
     double peakFrequency = (peakIndex * 1.0 * SAMPLING_FREQUENCY) / numSamples;
     return peakFrequency;
 }
-
 
